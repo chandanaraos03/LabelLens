@@ -7,6 +7,23 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
+def free_ports():
+    """Ensure ports 8088 and 5188 are not occupied by previous sessions."""
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                [
+                    "powershell", "-NoProfile", "-Command",
+                    "Get-NetTCPConnection -LocalPort 8088,5188 -ErrorAction SilentlyContinue | "
+                    "Select-Object -ExpandProperty OwningProcess -Unique | "
+                    "ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }"
+                ],
+                capture_output=True
+            )
+            time.sleep(0.8)
+        except Exception:
+            pass
+
 def run_services():
     print("=" * 70)
     print("   LEGAL METROLOGY (PACKAGED COMMODITIES) COMPLIANCE SYSTEM")
@@ -19,6 +36,9 @@ def run_services():
     print("=" * 70)
     print(" Press Ctrl+C to safely terminate both servers.\n")
 
+    # Clean any lingering instances before binding
+    free_ports()
+
     env = os.environ.copy()
     env["PYTHONPATH"] = str(BASE_DIR / "backend")
 
@@ -28,7 +48,7 @@ def run_services():
         env=env
     )
 
-    time.sleep(1)
+    time.sleep(1.5)
 
     frontend_proc = subprocess.Popen(
         [sys.executable, str(BASE_DIR / "frontend" / "serve_frontend.py")],
@@ -39,19 +59,25 @@ def run_services():
         while True:
             time.sleep(1)
             if backend_proc.poll() is not None:
-                print("Backend terminated unexpectedly.")
+                print("Backend terminated.")
                 break
             if frontend_proc.poll() is not None:
-                print("Frontend terminated unexpectedly.")
+                print("Frontend terminated.")
                 break
     except KeyboardInterrupt:
         print("\nStopping all services...")
     finally:
         try:
             backend_proc.terminate()
-            frontend_proc.terminate()
+            backend_proc.kill()
         except Exception:
             pass
+        try:
+            frontend_proc.terminate()
+            frontend_proc.kill()
+        except Exception:
+            pass
+        free_ports()
         print("All servers stopped.")
 
 if __name__ == "__main__":
